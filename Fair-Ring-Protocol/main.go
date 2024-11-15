@@ -10,10 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 )
-
-// TODO: Make a terminal interface to start the token passing(ONLY FOR BOOTSTRAP)
-// Add in the ability to input the number of nodes that would be requesting for the critical section
 
 func main() {
 	n := node.Node{
@@ -62,7 +60,7 @@ func main() {
 	fmt.Scan(&answer)
 
 	// Set the flag for the nodes requesting for the critical section
-	n.Flag = (answer == "y")
+	n.Request = (answer == "y")
 	
 	// Start the token passing
 	if n.ID == 0 {
@@ -80,6 +78,9 @@ func main() {
 			}
 		}()
 	}
+
+	// Caclculate the time taken
+	go calculateTimeTaken(&n)
 
 	// Handling when the node fails or is shut down
 	sigChan := make(chan os.Signal, 1)
@@ -102,8 +103,7 @@ func main() {
 		}
 		os.Exit(0)
 	}()
-
-	select {}
+	select{}
 }
 
 func readNodesList() map[int]string {
@@ -120,4 +120,29 @@ func readNodesList() map[int]string {
 	json.Unmarshal(byteValue, &nodesList) // Puts the byte value into the nodesList map
 
 	return nodesList
+}
+
+// Calculate the time taken from the first node to request to the last node to exist the critical section
+func calculateTimeTaken(n *node.Node) {
+	nodesList := readNodesList()
+	startTime := time.Now()
+
+	if n.ID == 0 {
+		n.Finished = make([]bool, len(nodesList))
+		for {
+			if all(n.Finished) {
+				fmt.Printf("Time taken for all nodes to exit the critical section: %v\n", time.Since(startTime))
+				break
+			}
+		}
+	}
+}
+
+func all(arr []bool) bool {
+	for _, v := range arr {
+		if !v {
+			return false
+		}
+	}
+	return true
 }

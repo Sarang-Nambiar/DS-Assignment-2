@@ -2,7 +2,6 @@ package node
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"net/rpc"
 	"os"
@@ -15,9 +14,9 @@ import (
 	IP string
 	Successor string // IP of the successor of the node
 	Clock int
-	Request bool // boolean to check if the node will concurrently request for the token
-	Flag bool // boolean to keep calculating whether to request for the token or not
+	Request bool // boolean to check if the node is requesting for the token
 	ReqTime int // timestamp at which the node requests for the token
+	Finished []bool // boolean to check if the nodes in a network has finished executing the critical section
 	Lock sync.Mutex
  }
 
@@ -33,6 +32,12 @@ import (
 	fmt.Printf("[NODE-%d] Entering the critical section\n", n.ID)
 	time.Sleep(2 * time.Second)
 	fmt.Printf("[NODE-%d] Completed the critical section\n", n.ID)
+
+	// Notify the bootstrap node that the current node has finished executing the critical section
+	_, err := CallByRPC(LOCALHOST + "8000", "Node.NotifyFinished", Message{ID: n.ID})
+	if err != nil {
+		fmt.Printf("[NODE-%d] Error occurred while notifying the bootstrap node: %s\n", n.ID, err)
+	}
  }
 
  // Function to start the RPC server
@@ -80,10 +85,6 @@ import (
 	fmt.Printf("[NODE-%d] Received token from NODE-%d\n", n.ID, message.ID)
 	n.Clock = max(n.Clock, message.Clock) + 1
 
-	if !n.Request {
-		n.Request = n.isRequesting()
-	} 
-
 	if n.Request {
 
 		// Update the logical clock
@@ -101,7 +102,6 @@ import (
 			// Run the critical section
 			n.CriticalSection()
 			n.Request = false // Reset the request Flag
-			n.Flag = false // Reset the Flag
 			message.ReqTime = -1 // Reset the timestamp
 			n.ReqTime = -1 // Reset the timestamp
 
@@ -132,13 +132,9 @@ import (
 	return nil
 }
 
-// Function to check if the node is going to request the token or not
-func (n *Node) isRequesting() bool {
-	if n.Flag {
-		rand.Seed(time.Now().UnixNano()) // Making sure this is random using a unique seed
-		return rand.Intn(2) == 1 // Generates random number from 0 to 1
-	}
-	return false
+func (n *Node)NotifyFinished(message Message, reply *Message) error {
+	n.Finished[message.ID] = true
+	return nil
 }
 
 // Utility function to call RPC methods
