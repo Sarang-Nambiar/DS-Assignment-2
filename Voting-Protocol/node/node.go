@@ -62,12 +62,8 @@ func (n *Node) StartRPCServer() {
 func (n *Node) StartRequestProcess(message Message, reply *Message) error {
 	if n.Request {
 
-		n.Lock.Lock()
-
 		n.Clock++
 		n.ReqTime = n.Clock
-		
-		n.Lock.Unlock()
 
 		// Send a CS request to all the nodes in the network
 		for i := range n.Network {
@@ -135,22 +131,17 @@ func (n *Node)ReceiveMessage(message Message, reply *Message) error {
 			}
 			return nil
 		} else {
-			if n.PrevReq.ReqTime < message.ReqTime {
-
-				heap.Push(n.Queue, Pointer{ID: message.ID, IP: message.IP, ReqTime: message.ReqTime})
-				fmt.Printf("[NODE-%d] Added node %d to the queue. New Queue: %v\n", n.ID, message.ID, n.Queue)
+			heap.Push(n.Queue, Pointer{ID: message.ID, IP: message.IP, ReqTime: message.ReqTime})
+			fmt.Printf("[NODE-%d] Added node %d to the queue. New Queue: %v\n", n.ID, message.ID, n.Queue)
+			
+			if n.PrevReq.ReqTime > message.ReqTime {
+				n.RescindVote(message)
 
 			} else if n.PrevReq.ReqTime == message.ReqTime {
-				if n.PrevReq.ID < message.ID {
-					// Lower ID gets more priority
-					heap.Push(n.Queue, Pointer{ID: message.ID, IP: message.IP, ReqTime: message.ReqTime})
-					fmt.Printf("[NODE-%d] Two nodes have the same request timestamp. Added node %d to the queue with timestamp %d over node %d with timestamp %d. New Queue: %v\n", n.ID, message.ID, message.ReqTime, n.PrevReq.ID, n.PrevReq.ReqTime, n.Queue)
-				} else {
+				if n.PrevReq.ID > message.ID {
 					n.RescindVote(message)
 				}
-			} else {
-				n.RescindVote(message)
-			}
+			} 
 		}
 	
 		// For some reason the releasing of all the votes is not taking place, moreover, the addition of another vote messes it up
@@ -168,34 +159,11 @@ func (n *Node)ReceiveMessage(message Message, reply *Message) error {
 			n.CriticalSection() // Execute the CS
 
 			// concurrently release all the votes
-			go func() {
-				for i := range n.VotesReceived {
-					n.Clock++
-					fmt.Printf("[NODE-%d] Sending a release to node %d\n", n.ID, n.VotesReceived[i].ID)
-					_, err := CallByRPC(n.VotesReceived[i].IP, "Node.ReceiveMessage", Message{Type: RELEASE, ID: n.ID, Clock: n.Clock})
-					if err != nil {
-						fmt.Printf("[NODE-%d] Error occurred while sending a release to node %d: %s\n", n.ID, n.VotesReceived[i].ID, err)
-					}
-				}
-				n.VotesReceived = []Pointer{}
-			}()
-
-			// // Reset variables
-			// n.PrevReq = Pointer{}
-			// n.Votes = 1
-
-			// // Send vote to the node at the head of the queue
-			// if n.Queue.Len() > 0 {
-			// 	n.Votes-- // Voting for the requesting node
-			// 	n.PrevReq = heap.Pop(n.Queue).(Pointer)
-
-			// 	n.Clock++
-			// 	fmt.Printf("[NODE-%d] Sending a vote to node %d\n", n.ID, message.ID)
-			// 	_, err := CallByRPC(n.PrevReq.IP, "Node.ReceiveMessage", Message{Type: VOTE, ID: n.ID, IP: n.IP, Clock: n.Clock})
-			// 	if err != nil {
-			// 		fmt.Printf("[NODE-%d] Error occurred while sending a vote to node %d: %s\n", n.ID, n.PrevReq.ID, err)
-			// 	}
-			// }
+			go n.sendRelease()
+		} else {
+			if n.isFinished { // Send release to all the incoming votes which are not yet released after execution of CS
+				go n.sendRelease()
+			}
 		}
 		n.Lock.Unlock()	
 
@@ -209,14 +177,12 @@ func (n *Node)ReceiveMessage(message Message, reply *Message) error {
 			n.Votes-- // Voting for the requesting node
 			n.PrevReq = heap.Pop(n.Queue).(Pointer)
 			n.Clock++
-			
+
 			fmt.Printf("[NODE-%d] Sending a vote to node %d\n", n.ID, n.PrevReq.ID)
-			go func() {
-				_, err := CallByRPC(n.PrevReq.IP, "Node.ReceiveMessage", Message{Type: VOTE, ID: n.ID, IP: n.IP, Clock: n.Clock})
-				if err != nil {
-					fmt.Printf("[NODE-%d] Error occurred while sending a vote to node %d: %s\n", n.ID, n.PrevReq.ID, err)
-				}
-			}()
+			_, err := CallByRPC(n.PrevReq.IP, "Node.ReceiveMessage", Message{Type: VOTE, ID: n.ID, IP: n.IP, Clock: n.Clock})
+			if err != nil {
+				fmt.Printf("[NODE-%d] Error occurred while sending a vote to node %d: %s\n", n.ID, n.PrevReq.ID, err)
+			}
 		}
 	
 	case RESCIND_VOTE:
@@ -236,8 +202,8 @@ func (n *Node)ReceiveMessage(message Message, reply *Message) error {
 		}
 		
 		// Remove the node from the votes received slice
-		n.VotesReceived = Remove(n.VotesReceived, element)		
-		n.Clock++
+		n.VotesReceived = Remove(n.VotesReceived, element)	
+		fmt.Printf("[NODE-%d] Removed node %d from the votes received list. New list: %v\n", n.ID, message.ID, n.VotesReceived)	
 	}
 	*reply = Message{Type: ACK} 
 	return nil
@@ -250,17 +216,34 @@ func (n *Node)AddNode(message Message, reply *Message) error {
 	return nil
 }
 
+func (n *Node) sendRelease() {
+	votesList := n.VotesReceived // create a copy so that any changes in length do not affect the loop
+	n.VotesReceived = []Pointer{} // Reset the votes received list
+	for i := range votesList {
+		n.Clock++
+		fmt.Printf("[NODE-%d] Sending a release to node %d\n", n.ID, votesList[i].ID)
+		_, err := CallByRPC(votesList[i].IP, "Node.ReceiveMessage", Message{Type: RELEASE, ID: n.ID, Clock: n.Clock})
+		if err != nil {
+			fmt.Printf("[NODE-%d] Error occurred while sending a release to node %d: %s\n", n.ID, votesList[i].ID, err)
+		}
+	}
+}
+
 // Function to rescind the vote
 func (n *Node)RescindVote(message Message) {
-	fmt.Printf("[NODE-%d] Sending a rescind vote to node %d.\n", n.ID, n.PrevReq.ID)
+
+	fmt.Printf("[NODE-%d] Sending a rescind vote to node %d to vote for node %d instead.\n", n.ID, n.PrevReq.ID, message.ID)
 
 	n.Clock++
 	reply, err := CallByRPC(n.PrevReq.IP, "Node.ReceiveMessage", Message{Type: RESCIND_VOTE, ID: n.ID, IP: n.IP, Clock: n.Clock})
 	if err != nil {
 		fmt.Printf("[NODE-%d] Error occurred while sending a rescind vote to node %d: %s\n", n.ID, message.ID, err)
 	}
-	
+
 	if reply.Type == ACK {// If the previous node has accepted the RESCIND_VOTE message
+		
+		// Store a copy of the previous request
+		prevRequest := n.PrevReq
 		n.Clock++
 		_, err := CallByRPC(n.IP, "Node.ReceiveMessage", Message{Type: RELEASE, ID: n.PrevReq.ID, IP: n.PrevReq.IP, Clock: n.Clock})
 		if err != nil {
@@ -268,11 +251,8 @@ func (n *Node)RescindVote(message Message) {
 		}
 
 		// Add the PrevReq to the queue after the release message has been sent
-		heap.Push(n.Queue, Pointer{ID: n.PrevReq.ID, IP: n.PrevReq.IP, ReqTime: n.PrevReq.ReqTime})
-		fmt.Printf("[NODE-%d] Added node %d to the queue. New Queue: %v\n", n.ID, n.PrevReq.ID, n.Queue)
-	} else {
-		heap.Push(n.Queue, Pointer{ID: message.ID, IP: message.IP, ReqTime: message.ReqTime})
-		fmt.Printf("[NODE-%d] Added node %d to the queue. New Queue: %v\n", n.ID, message.ID, n.Queue)
+		heap.Push(n.Queue, Pointer{ID: prevRequest.ID, IP: prevRequest.IP, ReqTime: prevRequest.ReqTime})
+		fmt.Printf("[NODE-%d] Added node %d to the queue. New Queue: %v\n", n.ID, prevRequest.ID, n.Queue)
 	}
 }
 

@@ -21,7 +21,7 @@ func main() {
 		Votes: 1, 
 		VotesReceived: []node.Pointer{},
 		Clock: 0,
-		Queue: &node.PriorityQueue{},
+		Queue: utils.NewPriorityQueue(),
 		Lock: sync.Mutex{}, 
 	}
 
@@ -63,14 +63,14 @@ func main() {
 		fmt.Println("Error occurred while updating nodes-list.json: ", err)
 	}
 
+	var numRequests int
 	if n.ID == 0 {
 		fmt.Printf("[NODE-%d] Make sure all the nodes are up and running.\n", n.ID)
-		var answer int
 		fmt.Printf("[NODE-%d] How many nodes should request for CS: \n", n.ID)
-		fmt.Scan(&answer)
+		fmt.Scan(&numRequests)
 
 		nodesList = utils.ReadNodesList()
-		message := node.Message{NumRequests: answer}
+		message := node.Message{NumRequests: numRequests}
 		for i := 0; i < len(nodesList); i++ {
 			go func(i int) {
 				_, err := node.CallByRPC(nodesList[i], "Node.SetRequesting", message)
@@ -105,7 +105,7 @@ func main() {
 		}()
 	}
 
-	go utils.CalculateTimeTaken(&n)
+	go utils.CalculateTimeTaken(&n, numRequests)
 
 	// Handling when the node fails or is shut down
 	sigChan := make(chan os.Signal, 1)
@@ -131,4 +131,6 @@ func main() {
 
 	select {}
 }
+
+
 
