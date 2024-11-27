@@ -9,4 +9,5 @@ type Message struct {
 	IP string // Source IP
 	ReqTime int // timestamp assigned to the token
 	Clock int
+	NumRequests int
 }

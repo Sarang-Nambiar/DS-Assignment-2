@@ -41,7 +41,7 @@ func main() {
 
 	go n.StartRPCServer()
 
-	fmt.Printf("The list of nodes in the network: %v\n", nodesList)
+
 	for i := range nodesList {
 		message := node.Message{ID: n.ID, IP: n.IP}
 		_, err := node.CallByRPC(nodesList[i], "Node.AddNode", message)
@@ -63,17 +63,28 @@ func main() {
 		fmt.Println("Error occurred while updating nodes-list.json: ", err)
 	}
 
-	var answer string
-	fmt.Printf("[NODE-%d] Do you want this node to request for the critical section concurrently? (y/n): \n", n.ID)
-	fmt.Scan(&answer)
+	var numRequests int
+	if n.ID == 0 {
+		fmt.Printf("[NODE-%d] Make sure all the nodes are up and running.\n", n.ID)
+		fmt.Printf("[NODE-%d] How many nodes should request for CS: \n", n.ID)
+		fmt.Scan(&numRequests)
 
-	// Set the flag for the nodes requesting for the critical section
-	n.Request = (answer == "y")
+		nodesList = utils.ReadNodesList()
+		message := node.Message{NumRequests: numRequests}
+		for i := 0; i < len(nodesList); i++ {
+			go func(i int) {
+				_, err := node.CallByRPC(nodesList[i], "Node.SetRequesting", message)
+				if err != nil {
+					fmt.Printf("[NODE-%d] Error occurred while setting the request flag for node %d: %s\n", n.ID, i, err)
+				}
+			}(i)
+		}
+	}
 	
 	// Start the token passing
 	if n.ID == 0 {
+		var answer string
 		go func() {
-			fmt.Printf("[NODE-%d] Make sure that all the required nodes are up and running before starting the token passing\n", n.ID)
 			for {
 				fmt.Printf("[NODE-%d] Do you want to start the request process? (y/n): ", n.ID)
 				fmt.Scan(&answer)
@@ -95,7 +106,7 @@ func main() {
 		}()
 	}
 
-	go utils.CalculateTimeTaken(&n)
+	go utils.CalculateTimeTaken(&n, numRequests)
 
 	// Handling when the node fails or is shut down
 	sigChan := make(chan os.Signal, 1)

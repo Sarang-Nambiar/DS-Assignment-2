@@ -28,7 +28,7 @@ const (
 	ACK = "ACK"
 	REPLY = "REPLY"
 	REQUEST = "REQUEST"	
-	RELEASE = "RELEASE"
+	// RELEASE = "RELEASE"
 )
 
  // Function to start the RPC server
@@ -86,6 +86,7 @@ func (n *Node) CriticalSection() {
 	fmt.Printf("[NODE-%d] Completed the critical section\n", n.ID)
 
 	// Notify Bootstrap node when the critical section is completed
+	n.Clock++
 	_, err := CallByRPC(LOCALHOST + "8000", "Node.NotifyFinished", Message{ID: n.ID})
 	if err != nil {
 		fmt.Printf("[NODE-%d] Error occurred while notifying the bootstrap node: %s\n", n.ID, err)
@@ -161,7 +162,7 @@ func (n *Node)ReceiveMessage(message Message, reply *Message) error {
 // Function to add a new node to the network
 func (n *Node)AddNode(message Message, reply *Message) error {
 	n.Network[message.ID] = message.IP
-	fmt.Printf("[NODE-%d] Added node %d to the network. New network: %v\n", n.ID, message.ID, n.Network)
+	// fmt.Printf("[NODE-%d] Added node %d to the network. New network: %v\n", n.ID, message.ID, n.Network)
 	*reply = Message{Type: ACK}
 	return nil
 }
@@ -192,6 +193,18 @@ func (n *Node)RequestCriticalSection() {
 			fmt.Printf("[NODE-%d] Sent a reply message to node %d\n", n.ID, item.(Item).ID)
 		}
 	}
+}
+
+// Function to decide whether the node requests for vote or not
+func (n *Node) SetRequesting(message Message, reply *Message) error {
+	n.Request = n.ID < message.NumRequests
+	if n.Request {
+		fmt.Printf("[NODE-%d] Node will request for the critical section\n", n.ID)
+	} else {
+		fmt.Printf("[NODE-%d] Node will not request for the critical section\n", n.ID)
+	}
+	*reply = Message{Type: ACK}
+	return nil
 }
 
 // Utility function to call RPC methods

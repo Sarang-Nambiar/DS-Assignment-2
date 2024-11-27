@@ -112,11 +112,6 @@ func (n *Node)ReceiveMessage(message Message, reply *Message) error {
 
 	switch message.Type {
 	case REQUEST:
-		// Two cases:
-		// 1. If the node has not voted for the CS of any other nodes, then vote for the requesting node
-		// 2. If the node has voted for the CS of another node, then add the requesting node to the queue
-		//   2.1 If the requesting node has a higher request timestamp, then add the requesting node to the queue
-		//   2.2 If the requesting node has a lower request timestamp, then send a RESCIND_VOTE message to the previous node and add the previous node to the queue.
 		fmt.Printf("[NODE-%d] Received a request from node %d\n", n.ID, message.ID)
 		if n.Votes > 0 {
 
@@ -297,6 +292,7 @@ func Remove(slice []Pointer, element Pointer) []Pointer {
     return append(slice[:j], slice[j+1:]...)
 }
 
+// Function to check if an element is present in a slice
 func Contains(slice []Pointer, element Pointer) bool {
 	for _, v := range slice {
 		if v.IP == element.IP && v.ID == element.ID {

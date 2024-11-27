@@ -33,12 +33,11 @@ func ReadNodesList() map[int]string {
 }
 
 // Calculate the time taken from the first node to request to the last node to exist the critical section
-func CalculateTimeTaken(n *node.Node) {
-	nodesList := ReadNodesList()
+func CalculateTimeTaken(n *node.Node, numRequests int) {
 	startTime := time.Now()
 
 	if n.ID == 0 {
-		n.Finished = make([]bool, len(nodesList))
+		n.Finished = make([]bool, numRequests)
 		for {
 			if all(n.Finished) {
 				fmt.Printf("Time taken for all nodes to exit the critical section: %v\n", time.Since(startTime))

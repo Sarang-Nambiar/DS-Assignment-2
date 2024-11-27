@@ -10,4 +10,5 @@ type Message struct {
 	IP string
 	ReqTime int
 	Clock int
+	NumRequests int
 }

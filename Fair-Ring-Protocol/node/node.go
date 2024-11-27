@@ -34,6 +34,7 @@ import (
 	fmt.Printf("[NODE-%d] Completed the critical section\n", n.ID)
 
 	// Notify the bootstrap node that the current node has finished executing the critical section
+	n.Clock++
 	_, err := CallByRPC(LOCALHOST + "8000", "Node.NotifyFinished", Message{ID: n.ID})
 	if err != nil {
 		fmt.Printf("[NODE-%d] Error occurred while notifying the bootstrap node: %s\n", n.ID, err)
@@ -65,7 +66,7 @@ import (
 
  // Initialize the token passing
  func (n *Node) StartTokenPassing() {
-	n.Clock += 1
+	n.Clock++
 	message := Message{ID: n.ID, Clock: n.Clock, ReqTime: -1}
 
 	// Send the token to the successor concurrently
@@ -134,6 +135,17 @@ import (
 
 func (n *Node)NotifyFinished(message Message, reply *Message) error {
 	n.Finished[message.ID] = true
+	return nil
+}
+
+// Function to decide whether the node requests for vote or not
+func (n *Node) SetRequesting(message Message, reply *Message) error {
+	n.Request = n.ID < message.NumRequests
+	if n.Request {
+		fmt.Printf("[NODE-%d] Node will request for the critical section\n", n.ID)
+	} else {
+		fmt.Printf("[NODE-%d] Node will not request for the critical section\n", n.ID)
+	}
 	return nil
 }
 
