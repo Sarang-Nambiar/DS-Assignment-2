@@ -1,1 +1,0 @@
-This is the Fair ring protocol implementation
