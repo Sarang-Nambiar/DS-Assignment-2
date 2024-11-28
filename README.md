@@ -1,4 +1,4 @@
-# DS-Assignment-2
+# Distributed Mutual Exclusion
 
 This project contains the implementation of the following mutual exclusion protocols:
 1. Fair Ring Protocol
